@@ -1,0 +1,4 @@
+project_id = "cqcplesxkwcwcgplwjjz"
+
+[functions.brand-comparison]
+verify_jwt = false
