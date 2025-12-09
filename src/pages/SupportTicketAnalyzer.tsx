@@ -1,5 +1,4 @@
-import { useState, useMemo } from "react";
-import { fdTickets } from "@/data/brandCrisis";
+import { useState, useEffect, useMemo } from "react";
 import { FDTicket, FDDrilldownPath, LOBAnalytics, SOURCE_MAP, SourceBreakdown, CategoryBreakdown } from "@/types/fdTicket";
 import { aggregateByLOB, filterTickets } from "@/utils/fdTicketAnalytics";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +9,9 @@ import { FDPieChart } from "@/components/brand/FDPieChart";
 import { FDTicketList } from "@/components/brand/FDTicketList";
 import { LOBStatsCard } from "@/components/brand/LOBStatsCard";
 import { TicketPopup } from "@/components/brand/TicketPopup";
+
+const API_URL = "http://192.168.235.182:5001/freshdesk/tickets/file";
+
 const trendIcons = {
   up: TrendingUp,
   down: TrendingDown,
@@ -74,7 +76,9 @@ const aggregateAllSources = (lobAnalytics: LOBAnalytics[]): SourceBreakdown[] =>
   return Array.from(sourceMap.values());
 };
 export default function SupportTicketAnalyzer() {
-  const lobAnalytics = useMemo(() => aggregateByLOB(fdTickets.tickets as FDTicket[]), []);
+  const [tickets, setTickets] = useState<FDTicket[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedLOB, setSelectedLOB] = useState("All");
   const [currentPath, setCurrentPath] = useState<FDDrilldownPath>({
     level: "category"
@@ -82,6 +86,50 @@ export default function SupportTicketAnalyzer() {
   const [popupOpen, setPopupOpen] = useState(false);
   const [popupTickets, setPopupTickets] = useState<FDTicket[]>([]);
   const [popupTitle, setPopupTitle] = useState("");
+
+  useEffect(() => {
+    const fetchTickets = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(API_URL, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`API request failed with status ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        // Handle different possible response structures
+        let ticketsData: FDTicket[] = [];
+        if (Array.isArray(result)) {
+          ticketsData = result;
+        } else if (result?.tickets && Array.isArray(result.tickets)) {
+          ticketsData = result.tickets;
+        } else if (result?.data?.tickets && Array.isArray(result.data.tickets)) {
+          ticketsData = result.data.tickets;
+        } else {
+          throw new Error('Unexpected response format');
+        }
+        
+        setTickets(ticketsData);
+      } catch (err) {
+        console.error('Error fetching tickets:', err);
+        setError(err instanceof Error ? err.message : 'Failed to fetch tickets');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchTickets();
+  }, []);
+
+  const lobAnalytics = useMemo(() => aggregateByLOB(tickets), [tickets]);
 
   // Aggregate analytics for "All" LOBs
   const allAnalytics: LOBAnalytics = useMemo(() => ({
@@ -102,7 +150,7 @@ export default function SupportTicketAnalyzer() {
     trend: "stable" as const
   }), [lobAnalytics]);
   const currentAnalytics = selectedLOB === "All" ? allAnalytics : lobAnalytics.find(l => l.lob === selectedLOB) || lobAnalytics[0];
-  const lobTickets = useMemo(() => selectedLOB === "All" ? fdTickets.tickets as FDTicket[] : (fdTickets.tickets as FDTicket[]).filter(t => t.lob === selectedLOB), [selectedLOB]);
+  const lobTickets = useMemo(() => selectedLOB === "All" ? tickets : tickets.filter(t => t.lob === selectedLOB), [selectedLOB, tickets]);
   const handleLOBChange = (lob: string) => {
     setSelectedLOB(lob);
     setCurrentPath({
@@ -127,7 +175,7 @@ export default function SupportTicketAnalyzer() {
   };
 
   // Global summary stats
-  const totalTickets = fdTickets.tickets.length;
+  const totalTickets = tickets.length;
   const totalOpen = lobAnalytics.reduce((sum, l) => sum + l.openCount, 0);
   const totalComplaints = lobAnalytics.reduce((sum, l) => sum + l.complaintCount, 0);
   const totalHighSeverity = lobAnalytics.reduce((sum, l) => sum + l.highSeverityCount, 0);
@@ -153,11 +201,27 @@ export default function SupportTicketAnalyzer() {
     icon: CheckCircle2,
     color: "text-status-success"
   }];
-  if (!currentAnalytics) {
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-full">
+        <p className="text-muted-foreground">Loading ticket data...</p>
+      </div>;
+  }
+
+  if (error) {
+    return <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <p className="text-destructive font-medium">Error loading tickets</p>
+          <p className="text-muted-foreground text-sm mt-1">{error}</p>
+        </div>
+      </div>;
+  }
+
+  if (!currentAnalytics || tickets.length === 0) {
     return <div className="flex items-center justify-center h-full">
         <p className="text-muted-foreground">No ticket data available</p>
       </div>;
   }
+  
   return <div className="space-y-6 animate-slide-in">
       {/* Header */}
       <div>
@@ -165,6 +229,11 @@ export default function SupportTicketAnalyzer() {
         <p className="text-muted-foreground mt-1">
           Uncover what customers truly experience • {totalTickets.toLocaleString()} conversations analysed across {lobAnalytics.length} business lines
         </p>
+        {error && (
+          <div className="mt-2 p-2 bg-destructive/10 border border-destructive/30 rounded text-sm text-destructive">
+            Error: {error}
+          </div>
+        )}
       </div>
 
       {/* Global Summary Stats */}

@@ -8,7 +8,6 @@ import Index from "./pages/Index";
 import TechCrisis from "./pages/TechCrisis";
 import SupportTicketAnalyzer from "./pages/SupportTicketAnalyzer";
 import BrandComparison from "./pages/BrandComparison";
-import TodoDemo from "./pages/TodoDemo";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,7 +27,6 @@ const App = () => (
               element={<SupportTicketAnalyzer />}
             />
             <Route path="/brand-comparison" element={<BrandComparison />} />
-            <Route path="/todo-demo" element={<TodoDemo />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </DashboardLayout>
